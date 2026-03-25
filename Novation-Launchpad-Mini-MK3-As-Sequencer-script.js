@@ -16,6 +16,28 @@ NovationLMiniMK3.PROG_MIDI_LAYOUT =[0x5b, 0x5c, 0x5d, 0x5e, 0x5f, 0x60, 0x61, 0x
     0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d,
     0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13 ];
 
+
+NovationLMiniMK3.colorCodes = {
+    'off': 0x00,
+    'gray': 0x01,
+    'darkRed': 0x07,
+    'red' : 0x05,
+    'darkGreen' : 0x7B,
+    'green' : 0x15,
+    'blue' : 0x25,
+    'purple' : 0x45,
+    'pink' : 0x5F,
+    'orange' : 0x3C,
+    'beige' : 0x6C
+};
+
+NovationLMiniMK3.padButtons = {
+    'play' : 0x59,
+    'record' : 0x4F,
+    'clear' : 0x45,
+    'edit' : 0x3B
+}
+
 NovationLMiniMK3.deckSyncIndex = -1;
 NovationLMiniMK3.isPlaying = false;
 NovationLMiniMK3.isRecording = false;
@@ -30,6 +52,11 @@ NovationLMiniMK3.samplesToIgnoreForNextstep = [];
 NovationLMiniMK3.currentPlayingSamples = [];
 
 
+NovationLMiniMK3.setPadColor = function(control, color){
+    let message = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x00, control, color, 0xF7];
+    midi.sendSysexMsg(message, message.length);
+}
+
 NovationLMiniMK3.init = function (id, debugging) {
     midi.sendSysexMsg(this.MODE_PROG, this.MODE_PROG.length);
 
@@ -38,30 +65,26 @@ NovationLMiniMK3.init = function (id, debugging) {
         this.recording.push([]);
     }
 
-    let message = null;
-
     //Make seqencer pads white
     for(let i=0; i< this.seqLen;i++)
     {
-        message = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x00, NovationLMiniMK3.seqIndexToMidino(i), 0x01, 0xF7];
-        midi.sendSysexMsg(message, message.length);
+        NovationLMiniMK3.setPadColor(NovationLMiniMK3.seqIndexToMidino(i), NovationLMiniMK3.colorCodes.gray);
     }
 
     //Mark the current sequence position
-    message = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x00, NovationLMiniMK3.seqIndexToMidino(this.seqPos), 0x05, 0xF7];
-    midi.sendSysexMsg(message, message.length);
+    NovationLMiniMK3.setPadColor(NovationLMiniMK3.seqIndexToMidino(this.seqPos), NovationLMiniMK3.colorCodes.red);
 
     //Play pad
-    message = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x00, 0x59, 0x7B, 0xF7];
-    midi.sendSysexMsg(message, message.length);
+    NovationLMiniMK3.setPadColor(NovationLMiniMK3.padButtons.play, NovationLMiniMK3.colorCodes.darkGreen);
 
     //Recording pad
-    message = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x00, 0x4F, 0x07, 0xF7];
-    midi.sendSysexMsg(message, message.length);
+    NovationLMiniMK3.setPadColor(NovationLMiniMK3.padButtons.record, NovationLMiniMK3.colorCodes.darkRed);
 
     //Clear pad
-    message = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x00, 0x45, 0x3C, 0xF7];
-    midi.sendSysexMsg(message, message.length);
+    NovationLMiniMK3.setPadColor(NovationLMiniMK3.padButtons.clear, NovationLMiniMK3.colorCodes.orange);
+
+    //Edit pad
+    NovationLMiniMK3.setPadColor(NovationLMiniMK3.padButtons.edit, NovationLMiniMK3.colorCodes.purple);
 
     this.setDeckSyncIndex(0);
 }
@@ -114,29 +137,25 @@ NovationLMiniMK3.setDeckSyncIndex = function(deckIndex){
 
         if(prevDeckSyncIndex >= 0)
         {
-            let message = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x00,this.PROG_MIDI_LAYOUT[prevDeckSyncIndex], 0x00, 0xF7];
-            midi.sendSysexMsg(message, message.length);
+            NovationLMiniMK3.setPadColor(this.PROG_MIDI_LAYOUT[prevDeckSyncIndex], NovationLMiniMK3.colorCodes.off);
         }
 
         {
-            let message = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x00,this.PROG_MIDI_LAYOUT[this.deckSyncIndex], 0x6C, 0xF7];
-            midi.sendSysexMsg(message, message.length);
+            NovationLMiniMK3.setPadColor(this.PROG_MIDI_LAYOUT[this.deckSyncIndex], NovationLMiniMK3.colorCodes.beige);
         }
     }
 }
 
 NovationLMiniMK3.playPress = function(){
     this.isPlaying = !this.isPlaying;
-    let message = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x00,0x59,this.isPlaying ? 0x15 : 0x7B, 0xF7];
-    midi.sendSysexMsg(message, message.length);
+    NovationLMiniMK3.setPadColor(this.padButtons.play, this.isPlaying ? this.colorCodes.green : this.colorCodes.darkGreen);
     if(this.isPlaying)
         this.setSeqPos(0,false,false);
 }
 
 NovationLMiniMK3.recordPress = function(){
     this.isRecording = !this.isRecording;
-    let message = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x00,0x4F,this.isRecording ? 0x05 : 0x07, 0xF7];
-    midi.sendSysexMsg(message, message.length);
+    NovationLMiniMK3.setPadColor(this.padButtons.record, this.isRecording ? this.colorCodes.red : this.colorCodes.darkRed);
 }
 
 NovationLMiniMK3.padPress = function(_channel, control, value, _status, group) {
@@ -147,8 +166,7 @@ NovationLMiniMK3.padPress = function(_channel, control, value, _status, group) {
         console.log(`samplerIndex: ${samplerIndex}`);
         if(value > 0) {
             engine.setParameter(`[Sampler${samplerIndex}]`,"cue_gotoandplay", 1);
-            let message = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x00, control,0x25,0xF7];
-            midi.sendSysexMsg(message, message.length);
+            NovationLMiniMK3.setPadColor(control, this.colorCodes.blue);
 
             if(this.isRecording)
             {
@@ -185,8 +203,7 @@ NovationLMiniMK3.padPress = function(_channel, control, value, _status, group) {
             }
         }
         else{
-            let message = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x00, control,0x00,0xF7];
-            midi.sendSysexMsg(message, message.length);
+            NovationLMiniMK3.setPadColor(control, this.colorCodes.off);
         }
     }
     else if(this.isDeckSyncPad(padIndex)){
@@ -225,13 +242,8 @@ NovationLMiniMK3.padPress = function(_channel, control, value, _status, group) {
             this.seqPos = this.padIndexToSeqPos(padIndex);
             if(this.seqPos != lastSeqPos)
             {
-                let message = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x00, NovationLMiniMK3.seqIndexToMidino(lastSeqPos), 0x01, 0xF7];
-                midi.sendSysexMsg(message, message.length);
-
-                message = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x00, NovationLMiniMK3.seqIndexToMidino(NovationLMiniMK3.seqPos), 0x05, 0xF7];
-                midi.sendSysexMsg(message, message.length);
-
-                
+                NovationLMiniMK3.setPadColor(NovationLMiniMK3.seqIndexToMidino(lastSeqPos), this.colorCodes.gray);
+                NovationLMiniMK3.setPadColor(NovationLMiniMK3.seqIndexToMidino(NovationLMiniMK3.seqPos), this.colorCodes.red);
             }
             NovationLMiniMK3.lightOffPlayingSamplers();
             NovationLMiniMK3.playRecordedSamplesForSeqPos(this.seqPos);
@@ -270,8 +282,7 @@ NovationLMiniMK3.playLightsForSeqPos = function(seqPos)
     for(let i = 0; i < seqArr.length; i++)
     {
         let samplerIndex = seqArr[i];
-        let message = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x00,NovationLMiniMK3.samplerIndexToMidino(samplerIndex) ,0x25,0xF7];
-        midi.sendSysexMsg(message, message.length);
+        NovationLMiniMK3.setPadColor(NovationLMiniMK3.samplerIndexToMidino(samplerIndex), this.colorCodes.blue);
         NovationLMiniMK3.currentPlayingSamples.push(samplerIndex);
     }
 }
@@ -282,8 +293,7 @@ NovationLMiniMK3.lightOffPlayingSamplers = function(){
     for(let i = 0; i < NovationLMiniMK3.currentPlayingSamples.length; i++)
     {
         let samplerIndex = NovationLMiniMK3.currentPlayingSamples[i];
-        let message = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x00,NovationLMiniMK3.samplerIndexToMidino(samplerIndex) ,0x00,0xF7];
-        midi.sendSysexMsg(message, message.length);
+        NovationLMiniMK3.setPadColor(NovationLMiniMK3.samplerIndexToMidino(samplerIndex), this.colorCodes.off);
     }
     NovationLMiniMK3.currentPlayingSamples = [];
 }
@@ -291,14 +301,9 @@ NovationLMiniMK3.lightOffPlayingSamplers = function(){
 NovationLMiniMK3.setSeqPos = function(newSeqPos, playSamplers = true, playLights = true){
     let lastSeqPos = NovationLMiniMK3.seqPos;
     NovationLMiniMK3.seqPos = newSeqPos;
-    let message = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x00, NovationLMiniMK3.seqIndexToMidino(lastSeqPos), 0x01, 0xF7];
-    midi.sendSysexMsg(message, message.length);
-
-    message = [0xF0, 0x00, 0x20, 0x29, 0x02, 0x0D, 0x03, 0x00, NovationLMiniMK3.seqIndexToMidino(NovationLMiniMK3.seqPos), 0x05, 0xF7];
-    midi.sendSysexMsg(message, message.length);
-
+    NovationLMiniMK3.setPadColor(NovationLMiniMK3.seqIndexToMidino(lastSeqPos), this.colorCodes.gray);
+    NovationLMiniMK3.setPadColor(NovationLMiniMK3.seqIndexToMidino(NovationLMiniMK3.seqPos), this.colorCodes.red);
     
-
     if(playSamplers)
         NovationLMiniMK3.playRecordedSamplesForSeqPos(NovationLMiniMK3.seqPos);
 
