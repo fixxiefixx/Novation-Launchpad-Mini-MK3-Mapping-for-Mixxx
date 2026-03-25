@@ -20,6 +20,7 @@ NovationLMiniMK3.PROG_MIDI_LAYOUT =[0x5b, 0x5c, 0x5d, 0x5e, 0x5f, 0x60, 0x61, 0x
 NovationLMiniMK3.colorCodes = {
     'off': 0x00,
     'gray': 0x01,
+    'white': 0x03,
     'darkRed': 0x07,
     'red' : 0x05,
     'darkGreen' : 0x7B,
@@ -70,9 +71,6 @@ NovationLMiniMK3.init = function (id, debugging) {
     {
         NovationLMiniMK3.setPadColor(NovationLMiniMK3.seqIndexToMidino(i), NovationLMiniMK3.colorCodes.gray);
     }
-
-    //Mark the current sequence position
-    NovationLMiniMK3.setPadColor(NovationLMiniMK3.seqIndexToMidino(this.seqPos), NovationLMiniMK3.colorCodes.red);
 
     //Play pad
     NovationLMiniMK3.setPadColor(NovationLMiniMK3.padButtons.play, NovationLMiniMK3.colorCodes.darkGreen);
@@ -150,7 +148,17 @@ NovationLMiniMK3.playPress = function(){
     this.isPlaying = !this.isPlaying;
     NovationLMiniMK3.setPadColor(this.padButtons.play, this.isPlaying ? this.colorCodes.green : this.colorCodes.darkGreen);
     if(this.isPlaying)
-        this.setSeqPos(0,false,false);
+    {
+        let beatDistance = engine.getValue(`[Channel${this.deckSyncIndex + 1}]`,"beat_distance");
+        let play = (Math.floor(beatDistance*4)) % 4 != 3;
+        NovationLMiniMK3.setSeqPos(0, play, play);
+    }
+    else
+    {
+        this.lightOffPlayingSamplers();
+        this.updateSeqPadColor(this.seqPos);
+        NovationLMiniMK3.samplesToIgnoreForNextstep = [];
+    }
 }
 
 NovationLMiniMK3.recordPress = function(){
@@ -165,45 +173,74 @@ NovationLMiniMK3.padPress = function(_channel, control, value, _status, group) {
         let samplerIndex = this.padIndexToSamplerIndex(padIndex);
         console.log(`samplerIndex: ${samplerIndex}`);
         if(value > 0) {
-            engine.setParameter(`[Sampler${samplerIndex}]`,"cue_gotoandplay", 1);
-            NovationLMiniMK3.setPadColor(control, this.colorCodes.blue);
-
-            if(this.isRecording)
+            if(this.editPos >= 0)
             {
-                let recordPos = this.seqPos;
-                if(this.isPlaying)
+                let recArr = NovationLMiniMK3.recording[this.editPos];
+                if(recArr.includes(samplerIndex))
                 {
-                    let beatDistance = engine.getValue(`[Channel${this.deckSyncIndex + 1}]`,"beat_distance");
-                    if(beatDistance % (1.0/4.0) > (1.0/8.0))
+                    recArr.splice(recArr.indexOf(samplerIndex), 1);
+                    NovationLMiniMK3.setPadColor(control, NovationLMiniMK3.colorCodes.off);
+                    if(recArr.length == 0)
                     {
-                        recordPos += 1;
-                        if(recordPos >= this.seqLen)
-                            recordPos = 0;
-
-                        NovationLMiniMK3.samplesToIgnoreForNextstep.push(samplerIndex);
+                        NovationLMiniMK3.updateSeqPadColor(this.editPos);
                     }
                 }
-
-
-                let seqArr = this.recording[recordPos];
-                let alreadyRecorded = false;
-                for(let i = 0; i < seqArr.length; i++)
+                else
                 {
-                    if(seqArr[i] == samplerIndex)
+                    recArr.push(samplerIndex);
+                    NovationLMiniMK3.setPadColor(control, NovationLMiniMK3.colorCodes.blue);
+                    this.currentPlayingSamples.push(samplerIndex);
+                    if(recArr.length == 1)
                     {
-                        alreadyRecorded = true;
-                        break;
+                        NovationLMiniMK3.updateSeqPadColor(this.editPos);
                     }
                 }
+            }
+            else
+            {
+                engine.setParameter(`[Sampler${samplerIndex}]`,"cue_gotoandplay", 1);
+                NovationLMiniMK3.setPadColor(control, this.colorCodes.blue);
 
-                if(!alreadyRecorded)
+                if(this.isRecording && this.isPlaying)
                 {
-                    seqArr.push(samplerIndex);
+                    let recordPos = this.seqPos;
+                    if(this.isPlaying)
+                    {
+                        let beatDistance = engine.getValue(`[Channel${this.deckSyncIndex + 1}]`,"beat_distance");
+                        if(beatDistance % (1.0/4.0) > (1.0/8.0))
+                        {
+                            recordPos += 1;
+                            if(recordPos >= this.seqLen)
+                                recordPos = 0;
+
+                            NovationLMiniMK3.samplesToIgnoreForNextstep.push(samplerIndex);
+                        }
+                    }
+
+
+                    let seqArr = this.recording[recordPos];
+                    let alreadyRecorded = false;
+                    for(let i = 0; i < seqArr.length; i++)
+                    {
+                        if(seqArr[i] == samplerIndex)
+                        {
+                            alreadyRecorded = true;
+                            break;
+                        }
+                    }
+
+                    if(!alreadyRecorded)
+                    {
+                        seqArr.push(samplerIndex);
+                    }
                 }
             }
         }
         else{
-            NovationLMiniMK3.setPadColor(control, this.colorCodes.off);
+            if(this.editPos == -1)
+            {
+                NovationLMiniMK3.setPadColor(control, this.colorCodes.off);
+            }
         }
     }
     else if(this.isDeckSyncPad(padIndex)){
@@ -212,25 +249,50 @@ NovationLMiniMK3.padPress = function(_channel, control, value, _status, group) {
             this.setDeckSyncIndex(deckIndex);
         }
     }
-    else if(control == 0x59)
+    else if(control == NovationLMiniMK3.padButtons.play)
     {
         if(value > 0){
             this.playPress();
         }
     }
-    else if(control == 0x4F)
+    else if(control == NovationLMiniMK3.padButtons.record)
     {
         if(value > 0){
             this.recordPress();
         }
     }
-    else if(control == 0x45)
+    else if(control == NovationLMiniMK3.padButtons.clear)
     {
         //Clear recording
         if(value > 0){
             for(let i = 0; i < this.seqLen; i++)
             {
-                this.recording[i] = [];
+                if(this.recording[i].length > 0)
+                {
+                    this.recording[i] = [];
+                    NovationLMiniMK3.updateSeqPadColor(i);
+                }
+            }
+        }
+    }
+    else if(control == NovationLMiniMK3.padButtons.edit)
+    {
+        if(value > 0)
+        {
+            if(NovationLMiniMK3.editPos >= 0)
+            {
+                let editedPos = NovationLMiniMK3.editPos;
+                NovationLMiniMK3.editPos = -1;
+                NovationLMiniMK3.updateSeqPadColor(editedPos);
+                NovationLMiniMK3.lightOffPlayingSamplers();
+                //NovationLMiniMK3.playLightsForSeqPos(this.seqPos);
+                NovationLMiniMK3.setPadColor(NovationLMiniMK3.padButtons.edit, NovationLMiniMK3.colorCodes.purple);
+            }
+            else
+            {
+                NovationLMiniMK3.editPos = NovationLMiniMK3.seqPos;
+                NovationLMiniMK3.updateSeqPadColor(NovationLMiniMK3.seqPos);
+                NovationLMiniMK3.setPadColor(NovationLMiniMK3.padButtons.edit, NovationLMiniMK3.colorCodes.pink);
             }
         }
     }
@@ -238,15 +300,27 @@ NovationLMiniMK3.padPress = function(_channel, control, value, _status, group) {
     {
         if(value > 0)
         {
-            let lastSeqPos = this.seqPos;
-            this.seqPos = this.padIndexToSeqPos(padIndex);
-            if(this.seqPos != lastSeqPos)
+            let lastEditPos = this.editPos;
+            this.editPos = this.padIndexToSeqPos(padIndex);
+            if(lastEditPos == this.editPos)
             {
-                NovationLMiniMK3.setPadColor(NovationLMiniMK3.seqIndexToMidino(lastSeqPos), this.colorCodes.gray);
-                NovationLMiniMK3.setPadColor(NovationLMiniMK3.seqIndexToMidino(NovationLMiniMK3.seqPos), this.colorCodes.red);
+                NovationLMiniMK3.editPos = -1;
+                NovationLMiniMK3.updateSeqPadColor(lastEditPos);
+                NovationLMiniMK3.lightOffPlayingSamplers();
+                //NovationLMiniMK3.playLightsForSeqPos(this.seqPos);
+                NovationLMiniMK3.setPadColor(NovationLMiniMK3.padButtons.edit, NovationLMiniMK3.colorCodes.purple);
             }
-            NovationLMiniMK3.lightOffPlayingSamplers();
-            NovationLMiniMK3.playRecordedSamplesForSeqPos(this.seqPos);
+            else
+            {
+                if(lastEditPos >= 0)
+                {
+                    NovationLMiniMK3.updateSeqPadColor(lastEditPos);
+                }
+                NovationLMiniMK3.lightOffPlayingSamplers();
+                NovationLMiniMK3.updateSeqPadColor(this.editPos);
+                NovationLMiniMK3.playLightsForSeqPos(this.editPos);
+                NovationLMiniMK3.setPadColor(NovationLMiniMK3.padButtons.edit, NovationLMiniMK3.colorCodes.pink);
+            }
         }
     }
 }
@@ -298,11 +372,32 @@ NovationLMiniMK3.lightOffPlayingSamplers = function(){
     NovationLMiniMK3.currentPlayingSamples = [];
 }
 
+NovationLMiniMK3.updateSeqPadColor = function(seqPos){
+    let control = NovationLMiniMK3.seqIndexToMidino(seqPos);
+    if(seqPos == NovationLMiniMK3.editPos)
+    {
+        NovationLMiniMK3.setPadColor(control, this.colorCodes.pink);
+    }
+    else if(seqPos == NovationLMiniMK3.seqPos && NovationLMiniMK3.isPlaying)
+    {
+        NovationLMiniMK3.setPadColor(control, this.colorCodes.red);
+    }
+    else if(NovationLMiniMK3.recording[seqPos].length > 0)
+    {
+        NovationLMiniMK3.setPadColor(control, this.colorCodes.white);
+    }
+    else
+    {
+        NovationLMiniMK3.setPadColor(control, this.colorCodes.gray);
+    }
+}
+
 NovationLMiniMK3.setSeqPos = function(newSeqPos, playSamplers = true, playLights = true){
     let lastSeqPos = NovationLMiniMK3.seqPos;
     NovationLMiniMK3.seqPos = newSeqPos;
-    NovationLMiniMK3.setPadColor(NovationLMiniMK3.seqIndexToMidino(lastSeqPos), this.colorCodes.gray);
-    NovationLMiniMK3.setPadColor(NovationLMiniMK3.seqIndexToMidino(NovationLMiniMK3.seqPos), this.colorCodes.red);
+
+    NovationLMiniMK3.updateSeqPadColor(lastSeqPos);
+    NovationLMiniMK3.updateSeqPadColor(NovationLMiniMK3.seqPos);
     
     if(playSamplers)
         NovationLMiniMK3.playRecordedSamplesForSeqPos(NovationLMiniMK3.seqPos);
@@ -343,7 +438,7 @@ NovationLMiniMK3.beatDistanceChanged = function(value, group, control){
         if(newSeqPos >= NovationLMiniMK3.seqLen)
             newSeqPos = 0;
 
-        NovationLMiniMK3.setSeqPos(newSeqPos);
+        NovationLMiniMK3.setSeqPos(newSeqPos, true, NovationLMiniMK3.editPos == -1);
         NovationLMiniMK3.samplesToIgnoreForNextstep = [];
     }
 }
