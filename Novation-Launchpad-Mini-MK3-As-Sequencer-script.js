@@ -53,6 +53,7 @@ NovationLMiniMK3.seqLen = 8 * 4;
 NovationLMiniMK3.seqPos = 0;
 NovationLMiniMK3.editPos = -1;
 NovationLMiniMK3.beatDistanceConnection = null;
+NovationLMiniMK3.playConnection = null;
 NovationLMiniMK3.lastBeatDistance = 0;
 NovationLMiniMK3.bankIndex = 0;
 NovationLMiniMK3.recordingIndex = 0;
@@ -116,10 +117,74 @@ NovationLMiniMK3.init = function (id, debugging) {
     //sampler bank buttons
     NovationLMiniMK3.setPadColor(NovationLMiniMK3.padButtons.bank1, NovationLMiniMK3.colorCodes.green);
     NovationLMiniMK3.setPadColor(NovationLMiniMK3.padButtons.bank2, NovationLMiniMK3.colorCodes.gray);
+
+    //Autosync
+    if(engine.getSetting("autosync"))
+    {
+        engine.beginTimer(250, NovationLMiniMK3.doAutoSync, false);
+        this.playConnection = engine.makeConnection(`[Channel${this.deckSyncIndex + 1}]`, "play", NovationLMiniMK3.doAutoSync);
+    }
 }
 
 NovationLMiniMK3.shutdown = function() {
     midi.sendSysexMsg(this.MODE_LIVE, this.MODE_LIVE.length);
+}
+
+NovationLMiniMK3.getDeckLoudness = function(deck, crossfader){
+    var group = "[Channel" + deck + "]";
+        
+    var volume = engine.getValue(group, "volume");    // 0.0 to 1.0
+    var effectiveLevel = volume;
+    var isPlaying = engine.getValue(group, "play");
+    if(!isPlaying)
+        return 0;
+
+    var orientation = engine.getValue(group, "orientation"); // 0=L, 1=C, 2=R
+    var xFadeWeight = 1.0;
+
+    if (orientation === 0) {
+        xFadeWeight = Math.max(0, (1.0 - crossfader) / 2);
+    } else if (orientation === 2) {
+        xFadeWeight = Math.max(0, (1.0 + crossfader) / 2);
+    }
+
+    effectiveLevel *= xFadeWeight;
+    return effectiveLevel;
+}
+
+NovationLMiniMK3.getLoudestDeckByFaders = function(crossfader) {
+    var loudestDeck = null;
+    var maxEffectiveLevel = 0;
+
+    for (var i = 1; i <= 4; i++) {
+        
+        var effectiveLevel = NovationLMiniMK3.getDeckLoudness(i, crossfader);
+        if (effectiveLevel > maxEffectiveLevel) {
+            maxEffectiveLevel = effectiveLevel;
+            loudestDeck = i;
+        }
+    }
+    return (maxEffectiveLevel > 0.01) ? loudestDeck : null;
+}
+
+NovationLMiniMK3.doAutoSync = function(){
+    let oldDeckSyncIndex = NovationLMiniMK3.deckSyncIndex;
+    let crossfader = engine.getValue("[Master]", "crossfader"); // -1.0 to 1.0
+    let currentDeckLoudness = NovationLMiniMK3.getDeckLoudness(oldDeckSyncIndex + 1, crossfader);
+    if(currentDeckLoudness < 0.1)
+    {
+        let loudestDeckNumber = NovationLMiniMK3.getLoudestDeckByFaders(crossfader);
+        if(loudestDeckNumber !== null && loudestDeckNumber - 1 != oldDeckSyncIndex)
+        {
+            if(this.playConnection != null)
+                this.playConnection.disconnect();
+    
+            this.playConnection = engine.makeConnection(`[Channel${loudestDeckNumber}]`, "play", NovationLMiniMK3.doAutoSync);
+
+            NovationLMiniMK3.setDeckSyncIndex(loudestDeckNumber - 1);
+        }
+
+    }
 }
 
 NovationLMiniMK3.isControlPad = function(padIndex){

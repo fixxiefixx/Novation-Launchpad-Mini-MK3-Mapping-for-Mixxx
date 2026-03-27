@@ -6,6 +6,11 @@
         <description>Midi Mapping for the Novation Launchpad Mini MK3 as a Sequencer</description>
         <forums>https://mixxx.discourse.group/t/pioneer-ddj-flx4</forums>
     </info>
+    <settings>
+        <group label="Behaviour">
+          <option variable="autosync" type="boolean" label="Auto Sync" descryption="Automatically syncs the sequencer with the deck that has the highest volume." default="false"/>
+        </group>
+    </settings>
     <controller id="LMiniMK3">
         <scriptfiles>
             <file filename="Novation-Launchpad-Mini-MK3-As-Sequencer-script.js" functionprefix="NovationLMiniMK3"/>
