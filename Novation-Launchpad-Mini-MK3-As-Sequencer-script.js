@@ -440,6 +440,7 @@ NovationLMiniMK3.padPress = function(_channel, control, value, _status, group) {
                     NovationLMiniMK3.updateSeqPadColor(i);
                 }
             }
+            NovationLMiniMK3.lightOffPlayingSamplers();
         }
     }
     else if(control == NovationLMiniMK3.padButtons.edit)
